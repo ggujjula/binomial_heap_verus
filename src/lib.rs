@@ -18,12 +18,6 @@ verus! {
 
     broadcast use {group_proven_partialord, group_proven_ord};
 
-    #[derive(Debug, PartialEq)]
-    pub enum HeapError {
-        Empty,
-        Internal,
-    }
-
     #[derive(Debug)]
     pub struct BinomialTree<T: ProvenOrd + Debug> {
         element: T,
