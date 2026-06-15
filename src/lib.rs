@@ -1,142 +1,104 @@
+//mod scratch;
+pub mod tree;
 mod union;
 
-use std::fmt::Debug;
+use crate::tree::BinomialTree as InnerTree;
+//use std::fmt::Debug;
+#[cfg(verus_only)]
+use verus_relations::proven_ord::proven_ord::group_proven_ord;
+use verus_relations::proven_ord::proven_ord::ProvenOrd;
+#[cfg(verus_only)]
+use verus_relations::proven_partialord::proven_partialord::group_proven_partialord;
 use vstd::prelude::*;
+#[cfg(verus_only)]
+use vstd::std_specs::cmp::*;
 
 verus! {
-    #[cfg(verus_only)]
-    use verus_relations::proven_ord::proven_ord::group_proven_ord;
-    use verus_relations::proven_ord::proven_ord::ProvenOrd;
-    #[cfg(verus_only)]
-    use verus_relations::proven_partialord::proven_partialord::group_proven_partialord;
-    use vstd::multiset::Multiset;
-    #[cfg(verus_only)]
-    use vstd::std_specs::cmp::*;
-    use vstd::view::View;
-    #[cfg(verus_only)]
-    use crate::union::{ms_add_all, lemma_ms_add_contains};
 
     broadcast use {group_proven_partialord, group_proven_ord};
 
-    #[derive(Debug)]
-    pub struct BinomialTree<T: ProvenOrd + Debug> {
-        element: T,
-        children: Vec<BinomialTree<T>>,
+    pub struct BinomialHeap<'a, T: ProvenOrd> {
+        trees: Vec<InnerTree<T>>,
+        cache: Option<&'a T>,
     }
 
-    impl<T: ProvenOrd + Debug> View for BinomialTree<T> {
-        type V = Multiset<T>;
-
-        closed spec fn view(&self) -> Self::V
-            decreases self, 1int
-        {
-            ms_add_all(self.inner_view()).insert(self.element)
+    impl <T: ProvenOrd> Default for  BinomialHeap<'_, T> {
+        fn default() -> Self {
+            Self::new()
         }
     }
 
-    impl<T: ProvenOrd + Debug> BinomialTree<T> {
-
-        closed spec fn inner_view(&self) -> Seq<Multiset<T>>
-            decreases self, 0int
-        {
-            let child_fn = |i: int, child: BinomialTree<T>| {
-                if 0 <= i < self.children@.len() {
-                    self.children[i].view()
-                } else {
-                    arbitrary()
-                }};
-            self.children@.map(child_fn)
+    impl <'a, T: ProvenOrd> BinomialHeap<'a, T> {
+        pub closed spec fn contains(&self, t: T) -> bool {
+            &&& exists |i: int| 0 <= i < self.trees@.len() && (#[trigger] self.trees@[i])@.contains(t)
         }
 
+        pub closed spec fn is_empty(&self) -> bool {
+            self.trees@.len() == 0
+        }
+
+        pub closed spec fn cache_wf(&self) -> bool {
+            match self.cache {
+                None => true,
+                Some(min) => {
+                    &&& self.contains(*min)
+                    &&& forall |t: T| self.contains(t) ==> min.is_le(&t)
+                }
+            }
+        }
 
         #[verifier::type_invariant]
-        spec fn well_formed(self) -> bool
-            decreases self
-        {
-            &&& forall |i: int| 0 <= i < self.children@.len() ==> self.spec_rank() > #[trigger] self.children[i].spec_rank()
-            &&& forall |i: int| 0 <= i < self.children@.len() ==> self.element.is_le(#[trigger] &self.children[i].element)
-            &&& forall |i: int| 0 <= i < self.children@.len() ==> (#[trigger] self.children[i]).well_formed()
-            &&& forall |i: int, j: int| 0 <= i < j < self.children.len() ==> #[trigger] self.children[i].spec_rank() < #[trigger] self.children[j].spec_rank()
+        closed spec fn wf(&self) -> bool {
+            &&& forall |i: int, j: int| #![trigger self.trees@[i], self.trees@[j]]
+                0 <= i < j < self.trees@.len() ==> self.trees@[i].spec_rank() < self.trees[j].spec_rank()
+            &&& self.cache_wf()
         }
 
-        proof fn lemma_min_at_root(&self)
-            requires self.well_formed(),
-            ensures forall |t: T| self.view().contains(t) ==> self.element.is_le(&t),
-            decreases self
-        {
-            if self.spec_rank() > 0 {
-                let child_fn = |i: int, child: BinomialTree<T>| {
-                    if 0 <= i < self.children@.len() {
-                        self.children[i].view()
-                    } else {
-                        arbitrary()
-                    }};
-                let inner_view = self.inner_view();
-                assert(self.inner_view() =~= self.children@.map(child_fn));
-                assert forall |i: int| #![trigger inner_view[i]] (0 <= i < self.children@.len()) implies (forall |t: T| (self.children[i].view().contains(t)) ==> self.element.is_le(&t))
-                    by {
-                        self.children[i].lemma_min_at_root();
-                    }
-                lemma_ms_add_contains(inner_view);
-                assert(forall |t: T| ms_add_all(inner_view).contains(t) ==> self.element.is_le(&t));
-                assert forall |t: T| self.view().contains(t) implies self.element.is_le(&t) by
-                {
-                    assert(self.view() =~= ms_add_all(inner_view).insert(self.element));
-                    if ms_add_all(inner_view).contains(t) {
-                        assert(forall |t: T| ms_add_all(inner_view).contains(t) ==> self.element.is_le(&t));
-                    } else {
-                        assert(t == self.element);
-                        assert(self.element.is_le(&self.element));
-                    }
-
-                }
-            }
-        }
-
-        pub fn new(elem: T) -> Self {
+        pub fn new() -> Self {
             Self {
-                element: elem,
-                children: vec![],
+                trees: vec![],
+                cache: None,
             }
         }
 
-        pub closed spec fn spec_rank(&self) -> nat {
-            self.children@.len()
-        }
+        //pub fn push(&mut self, t: T) {
+        //    todo!();
+        //}
 
-        pub fn rank(&self) -> usize {
-            self.children.len()
-        }
+        //pub fn pop(&mut self) -> Option<T>
+        //{
+        //    todo!();
+        //}
 
-        pub fn link(first: Self, other: Self) -> Self
-            requires first.spec_rank() == other.spec_rank(),
+        pub fn peek(&'a mut self) -> (ret: Option<&'a T>)
+            ensures match ret {
+                None => final(self).is_empty(),
+                Some(min) => forall |t: T| final(self).contains(t) ==> min.is_le(&t)
+        }
         {
             proof {
-                use_type_invariant(&first);
-                use_type_invariant(&other);
+                use_type_invariant(&*self);
             }
-            let (lower, higher) = match first.element.cmp(&other.element) {
-                std::cmp::Ordering::Less | std::cmp::Ordering::Equal => (first, other),
-                std::cmp::Ordering::Greater => (other, first),
-            };
-            Self {
-                element: lower.element,
-                children: {
-                    let mut new_children = lower.children;
-                    new_children.push(higher);
-                    new_children
+            if let Some(min) = self.cache {
+                return Some(min);
+            }
+            if self.trees.is_empty() {
+                return None;
+            }
+            let mut min = self.trees[0].peek();
+            for i in 1..self.trees.len()
+                invariant
+                    1 <= i <= self.trees@.len(),
+                    forall |j : int| #![trigger self.trees@[j]] 0 <= j < i ==> (forall |t: T| self.trees@[j]@.contains(t) ==> min.is_le(&t)),
+                    self.contains(*min),
+            {
+                let peek = self.trees[i].peek();
+                if peek < min {
+                    min = peek;
                 }
             }
-        }
-
-        pub fn peek(&self) -> (retval: &T)
-            ensures forall |t: T| self.view().contains(t) ==> retval.is_le(&t),
-        {
-            proof {
-                use_type_invariant(&self);
-                self.lemma_min_at_root();
-            }
-            &self.element
+            self.cache = Some(min);
+            self.cache
         }
     }
-} // verus!
+}
