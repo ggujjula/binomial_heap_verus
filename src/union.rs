@@ -16,6 +16,12 @@ verus! {
     {
     }
 
+    pub proof fn lemma_ms_add_all_adds<T>(s: Seq<Multiset<T>>, m: Multiset<T>)
+        ensures ms_add_all(s).add(m) =~= ms_add_all(s.push(m))
+    {
+        assert(s =~= s.push(m).drop_last());
+    }
+
     pub proof fn lemma_ms_add_contains<T>(s: Seq<Multiset<T>>)
         ensures forall |t: T| ms_add_all(s).contains(t) ==> (exists |i: int| 0 <= i < s.len() && #[trigger] s[i].contains(t)),
         decreases s.len(),

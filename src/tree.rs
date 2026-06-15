@@ -11,7 +11,7 @@ verus! {
     use vstd::std_specs::cmp::*;
     use vstd::view::View;
     #[cfg(verus_only)]
-    use crate::union::{ms_add_all, lemma_ms_add_contains};
+    use crate::union::{ms_add_all, lemma_ms_add_all_adds, lemma_ms_add_contains};
 
     broadcast use {group_proven_partialord, group_proven_ord};
 
@@ -31,6 +31,10 @@ verus! {
     }
 
     impl<T: ProvenOrd> BinomialTree<T> {
+
+        pub closed spec fn size(&self) -> nat {
+            self@.len()
+        }
 
         closed spec fn inner_view(&self) -> Seq<Multiset<T>>
             decreases self, 0int
@@ -105,8 +109,9 @@ verus! {
             self.children.len()
         }
 
-        pub fn link(first: Self, other: Self) -> Self
+        pub fn link(first: Self, other: Self) -> (ret: Self)
             requires first.spec_rank() == other.spec_rank(),
+            ensures ret@ =~= first@.add(other@),
         {
             proof {
                 use_type_invariant(&first);
@@ -116,14 +121,20 @@ verus! {
                 std::cmp::Ordering::Less | std::cmp::Ordering::Equal => (first, other),
                 std::cmp::Ordering::Greater => (other, first),
             };
-            Self {
+            let ghost old_lower = lower;
+            let retval = Self {
                 element: lower.element,
                 children: {
                     let mut new_children = lower.children;
                     new_children.push(higher);
                     new_children
                 }
+            };
+            proof {
+                lemma_ms_add_all_adds(old_lower.inner_view(), higher@);
+                assert(old_lower.inner_view().push(higher@) =~= retval.inner_view());
             }
+            retval
         }
 
         pub fn peek(&self) -> (retval: &T)

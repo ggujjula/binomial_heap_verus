@@ -30,11 +30,15 @@ verus! {
 
     impl <'a, T: ProvenOrd> BinomialHeap<'a, T> {
         pub closed spec fn contains(&self, t: T) -> bool {
-            &&& exists |i: int| 0 <= i < self.trees@.len() && (#[trigger] self.trees@[i])@.contains(t)
+            exists |i: int| 0 <= i < self.trees@.len() && (#[trigger] self.trees@[i])@.contains(t)
         }
 
         pub closed spec fn is_empty(&self) -> bool {
-            self.trees@.len() == 0
+            self.size() == 0
+        }
+
+        pub closed spec fn size(self) -> nat {
+            self.trees@.fold_left(0nat, |size: nat, tree: InnerTree<T>| size + tree.size())
         }
 
         pub closed spec fn cache_wf(&self) -> bool {
@@ -61,14 +65,37 @@ verus! {
             }
         }
 
-        //pub fn push(&mut self, t: T) {
-        //    todo!();
-        //}
+        pub fn push(&mut self, t: T)
+            ensures final(self).size() == old(self).size() + 1
+        {
+            let tree = InnerTree::new(t);
+            //TODO
+            proof {
+                assume(false)
+            }
+        }
 
-        //pub fn pop(&mut self) -> Option<T>
-        //{
-        //    todo!();
-        //}
+        pub fn pop(&mut self) -> (ret: Option<T>)
+            ensures match ret {
+                None => final(self).is_empty(),
+                Some(min) => {
+                    &&& final(self).size() == old(self).size() - 1
+                    &&& (forall |t: T| final(self).contains(t) ==> min.is_le(&t))
+                }
+            }
+        {
+            proof {
+                use_type_invariant(&*self);
+            }
+            if self.trees.is_empty() {
+                return None;
+            }
+            //TODO
+            proof {
+                assume(false)
+            }
+            None
+        }
 
         pub fn peek(&'a mut self) -> (ret: Option<&'a T>)
             ensures match ret {
